@@ -12,9 +12,11 @@ from rest_framework.authtoken.models import Token
 class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all()
     serializer_class = UserSerializer
-    
     authentication_classes = (TokenAuthentication,)
-    permission_classes = (AllowAny,)
+    def get_permissions(self):
+        if self.action == 'create':
+            return [AllowAny()]
+        return [IsAdminUser()]
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -24,11 +26,10 @@ class UserViewSet(viewsets.ModelViewSet):
         return Response({
                 'token': token.key,},
                 status=status.HTTP_201_CREATED)
-
     def list(self, request, *args, **kwargs):
-        response = {'message': 'You cant create rating like that'}
-        return Response(response, status=status.HTTP_400_BAD_REQUEST)
-
+        return Response({'message': 'Not allowed'},
+                        status=status.HTTP_400_BAD_REQUEST)
+    
 class MealViewSet(viewsets.ModelViewSet):
     queryset = Meal.objects.all()
     serializer_class = MealSerializer
@@ -37,44 +38,41 @@ class MealViewSet(viewsets.ModelViewSet):
     
     @action(detail=True, methods=['post'])
     def rate_meal(self, request, pk=None):
-        if 'stars' in request.data:
-            ''' create or update '''
-            meal = Meal.objects.get(id=pk)
-            stars = request.data['stars']
-            user = request.user
-            print (user)
-            try:
-                # update
-                rating = Rating.objects.get(user=user.id, meal=meal.id) # specific rate 
-                rating.stars = stars
-                rating.save()
-                serializer = RatingSerializer(rating, many=False)
-                json = {
-                    'message': 'Meal Rate Updated',
-                    'result': serializer.data
-                }
-                return Response(json,status=status.HTTP_400_BAD_REQUEST)
+        meal = self.get_object()
+        stars = request.data.get('stars')
 
-            except:
-                # create if the rate not exist 
-                rating = Rating.objects.create(stars=stars, meal=meal, user=user)
-                serializer = RatingSerializer(rating, many=False)
-                json = {
-                    'message': 'Meal Rate Created',
-                    'result': serializer.data }
-                return Response(json,status=status.HTTP_200_OK)
+        if stars is None:
+            return Response({'message': 'stars not provided'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        try:
+            stars = int(stars)
+        except (TypeError, ValueError):
+            return Response({'message': 'stars must be an integer'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if not 1 <= stars <= 5:
+            return Response({'message': 'stars must be between 1 and 5'},
+                            status=status.HTTP_400_BAD_REQUEST)
 
-        else:
-            json = { 'message': 'stars not provided'}
-            return Response(json,status=status.HTTP_400_BAD_REQUEST)
+        rating, created = Rating.objects.update_or_create(
+            user=request.user, meal=meal, defaults={'stars': stars}
+        )
+        return Response(
+            {
+                'message': 'Meal Rate Created' if created else 'Meal Rate Updated',
+                'result': RatingSerializer(rating).data,
+            },
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )
 
 class RatingViewSet(viewsets.ModelViewSet):
     queryset = Rating.objects.all()
     serializer_class = RatingSerializer
-
     authentication_classes = (TokenAuthentication,)
     permission_classes = (IsAuthenticated,)
 
+    def get_queryset(self):
+        return Rating.objects.filter(user=self.request.user)
+    
     def update(self, request, *args, **kwargs):
         response = {
             'message': 'Invalid way To create or update'}
