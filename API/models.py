@@ -2,7 +2,6 @@ from django.db import models
 from django.contrib.auth.models import User
 from django.core.validators import MaxValueValidator, MinValueValidator
 
-
 class Meal(models.Model):
     title = models.CharField(max_length=32)
     description = models.TextField(max_length=360)
@@ -20,7 +19,7 @@ class Meal(models.Model):
         total = sum(rating.stars for rating in ratings)
         count = ratings.count()
         if count > 0:
-            return total / count
+            return round(total / count, 2)
         return 0
 
 
@@ -36,4 +35,5 @@ class Rating(models.Model):
                 name='unique_user_meal_rating'
             )
         ]
+
         
